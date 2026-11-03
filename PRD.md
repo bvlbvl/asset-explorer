@@ -9,7 +9,7 @@
 
 Der Aktienkurs-Explorer ist ein Rust-Lernprojekt. Nutzer geben im Browser eine ISIN ein und sehen fuer den letzten abgeschlossenen Kalendermonat die verfuegbaren taeglichen Schlusskurse als Chart. Das Backend stellt die Kursdaten ueber eine eigene JSON-API bereit; der Browser ruft Marketstack niemals direkt auf.
 
-Marketstack ist der vorgesehene Marktdatenanbieter. Sein API-Schluessel wird lokal beziehungsweise serverseitig als `MARKETSTACK_API_KEY` bereitgestellt. Da Marketstack die getesteten ISINs nicht direkt in Boersensymbole aufloest, verwendet der MVP eine explizite, gepflegte ISIN-zu-Symbol-Zuordnung. Nicht zugeordnete Kennungen werden klar abgelehnt; Symbole oder Boersenplaetze duerfen nicht erraten werden.
+Marketstack ist der vorgesehene Marktdatenanbieter. Sein API-Schluessel wird lokal beziehungsweise serverseitig als `MARKETSTACK_API_KEY` bereitgestellt. Da Marketstack EOD-Daten anhand eines Symbols abfragt, verwendet der MVP zuerst explizit gepflegte ISIN-Zuordnungen und danach OpenFIGI als ISIN-Lookup. Der OpenFIGI-Ticker wird mit Marketstacks `/tickers`-Katalog abgeglichen; verwendet wird nur ein zur Boerse passendes Listing mit `has_eod=true`. Ein OpenFIGI-Treffer allein garantiert keine verfuegbaren Kursdaten; mehrdeutige Listings werden nicht geraten.
 
 Das Lernziel bleibt zentral: Rust-Konzepte, Tests, API-Design und eine schrittweise Client-Server-Architektur sollen anhand des Produkts nachvollziehbar eingeuebt werden.
 
@@ -41,8 +41,8 @@ Nicht-Ziele des MVP:
 
 - Das Eingabefeld akzeptiert eine ISIN, entfernt aeussere Leerzeichen und normalisiert Buchstaben auf Grossschreibung.
 - Die ISIN wird nach Format und Pruefziffer validiert.
-- Eine Marketstack-Symbolzuordnung wird nur verwendet, wenn sie fuer die ISIN und den Boersenplatz explizit geprueft wurde.
-- Unbekannte ISINs und mehrdeutige oder fehlende Zuordnungen werden nicht geraten; sie erhalten eine verstaendliche Rueckmeldung.
+- Eine gepflegte Marketstack-Symbolzuordnung wird bevorzugt; unbekannte ISINs werden ueber OpenFIGI auf einen moeglichen Ticker und Namen abgebildet und anschliessend mit Marketstacks `/tickers`-Katalog abgeglichen.
+- Der Kursabruf nutzt nur Listings mit `has_eod=true`, passend zur ermittelten Boerse. Fehlende oder mehrdeutige Zuordnungen erhalten eine verstaendliche Rueckmeldung.
 - Name, ISIN, Marketstack-Symbol und Boersenplatz werden am Ergebnis angezeigt.
 
 ### Schlusskurse und Chart
@@ -101,7 +101,7 @@ Nicht-Ziele des MVP:
 
 ## 9. Bekannte Grenzen und offene Punkte
 
-- Der aktuelle Code kennt Zuordnungen fuer `IE00B0M62Q58` (`IQQW.XETRA`) und `IE00BKM4GZ66` (`EIMI.XSWX`). Diese Liste ist kein allgemeiner ISIN-Aufloesungsdienst.
+- Der aktuelle Code kennt gepflegte Zuordnungen fuer `IE00B0M62Q58` (`IQQW.XETRA`) und `IE00BKM4GZ66` (`EIMI.XSWX`) und nutzt fuer andere gueltige ISINs OpenFIGI plus Marketstacks `/tickers`-Katalog. Bisher ist OpenFIGI `LN` explizit auf Marketstack-MIC `XLON` abgebildet; unbekannte mehrdeutige Boersencodes werden abgelehnt statt geraten.
 - Ein Fonds kann mehrere Boersenlistings haben. Die Zuordnung muss zum gewuenschten Markt passen und darf nicht allein aufgrund eines gleichen Namens geraten werden.
 - Verfuegbarkeit und Aktualitaet der EOD-Daten unterscheiden sich nach Symbol und Boerse. Vor Aufnahme eines weiteren Instruments sind Symbol, Boerse, Datenzeitraum und Tarifzugriff zu pruefen.
 - Der aktuelle Marketstack-Tarif erlaubt fuer die bislang getesteten Symbole keinen Intraday-Zugriff; Intraday liegt ausserhalb des MVP.

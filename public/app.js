@@ -5,11 +5,35 @@ const statusMessage = document.querySelector("#status-message");
 const chartWrap = document.querySelector("#chart-wrap");
 const emptyState = document.querySelector("#empty-state");
 const chartCanvas = document.querySelector("#history-chart");
+const chartHud = document.querySelector("#chart-hud");
+const debugOutput = document.querySelector("#debug-output");
+const debugSteps = document.querySelector("#debug-steps");
 let historyChart;
+let activeHistory = null;
+let selectedChartIndex = null;
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
 
 function setStatus(message, kind = "") {
   statusMessage.textContent = message;
   statusMessage.dataset.kind = kind;
+}
+
+function renderDebugOutput(steps) {
+  debugSteps.replaceChildren();
+  if (!Array.isArray(steps) || steps.length === 0) {
+    debugOutput.hidden = true;
+    return;
+  }
+
+  for (const step of steps) {
+    const item = document.createElement("li");
+    item.textContent = step;
+    debugSteps.append(item);
+  }
+  debugOutput.hidden = false;
 }
 
 function formatPrice(value, currency) {
@@ -20,8 +44,88 @@ function formatPrice(value, currency) {
   return currency ? `${formatted} ${currency}` : formatted;
 }
 
+function formatPercent(value) {
+  const sign = value >= 0 ? "+" : "";
+  return `${sign}${value.toFixed(1)}%`;
+}
+
+function calculateGrowthPercent(startValue, currentValue) {
+  if (!Number.isFinite(startValue) || !Number.isFinite(currentValue) || startValue === 0) {
+    return 0;
+  }
+
+  return ((currentValue - startValue) / startValue) * 100;
+}
+
+function showChartHud(history, chart, index) {
+  if (!history || !history.points || !history.points[index]) {
+    chartHud.hidden = true;
+    return;
+  }
+
+  const point = history.points[index];
+  const startValue = history.points[0].close;
+  const growthPercent = calculateGrowthPercent(startValue, point.close);
+  const xPosition = chart.scales.x.getPixelForValue(index);
+  const left = clamp(xPosition + chart.canvas.offsetLeft, 92, chartWrap.clientWidth - 92);
+  const dateText = new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(`${point.date}T00:00:00`));
+
+  chartHud.hidden = false;
+  chartHud.style.left = `${left}px`;
+  chartHud.style.top = "18px";
+  chartHud.innerHTML = `
+    <div class="chart-hud-header">${dateText}</div>
+    <div class="chart-hud-meta">
+      <span>${formatPrice(point.close, history.currency)}</span>
+      <span class="${growthPercent >= 0 ? "chart-hud-positive" : "chart-hud-negative"}">${formatPercent(growthPercent)}</span>
+    </div>
+  `;
+}
+
+function getNearestIndexFromPointer(event, chart) {
+  const canvasRect = chart.canvas.getBoundingClientRect();
+  const pointerX = (event?.native?.clientX ?? event?.clientX ?? canvasRect.left) - canvasRect.left;
+  let nearestIndex = 0;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < chart.data.labels.length; index += 1) {
+    const x = chart.scales.x.getPixelForValue(index);
+    const distance = Math.abs(pointerX - x);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  }
+
+  return nearestIndex;
+}
+
+function updateSelectedPoint(event, chart, history) {
+  const active = chart.getElementsAtEventForMode(event, "nearest", { intersect: false, axis: "x" }, true);
+  const index = active.length ? active[0].index : getNearestIndexFromPointer(event, chart);
+
+  if (!Number.isInteger(index) || !history?.points?.[index]) {
+    if (selectedChartIndex === null || !history?.points?.[selectedChartIndex]) {
+      chartHud.hidden = true;
+      return;
+    }
+    showChartHud(history, chart, selectedChartIndex);
+    return;
+  }
+
+  selectedChartIndex = index;
+  showChartHud(history, chart, selectedChartIndex);
+}
+
 function renderChart(history) {
   if (historyChart) historyChart.destroy();
+  activeHistory = history;
+  selectedChartIndex = null;
+  chartHud.hidden = true;
 
   const labels = history.points.map((point) => point.date);
   const values = history.points.map((point) => point.close);
@@ -41,6 +145,7 @@ function renderChart(history) {
         borderWidth: 2,
         pointRadius: 0,
         pointHoverRadius: 4,
+        pointHitRadius: 12,
         pointHoverBackgroundColor: "#d1ed70",
         fill: true,
         tension: 0.28,
@@ -48,17 +153,22 @@ function renderChart(history) {
     },
     options: {
       maintainAspectRatio: false,
-      interaction: { intersect: false, mode: "index" },
+      interaction: { intersect: false, mode: "nearest", axis: "x" },
+      onHover: (event, activeElements, chart) => {
+        if (!event) return;
+        updateSelectedPoint(event, chart, history);
+      },
+      onClick: (event, activeElements, chart) => {
+        if (!event) return;
+        const active = chart.getElementsAtEventForMode(event, "nearest", { intersect: false, axis: "x" }, true);
+        const fallbackIndex = active.length ? active[0].index : getNearestIndexFromPointer(event, chart);
+        selectedChartIndex = fallbackIndex;
+        showChartHud(history, chart, selectedChartIndex);
+      },
       plugins: {
         legend: { display: false },
         tooltip: {
-          displayColors: false,
-          backgroundColor: "#1d2924",
-          titleFont: { family: "IBM Plex Mono" },
-          bodyFont: { family: "DM Sans" },
-          callbacks: {
-            label: (context) => formatPrice(context.parsed.y, history.currency),
-          },
+          enabled: false,
         },
       },
       scales: {
@@ -94,13 +204,18 @@ form.addEventListener("submit", async (event) => {
   const isin = input.value.trim().toUpperCase();
   input.value = isin;
   button.disabled = true;
+  renderDebugOutput(null);
   setStatus("Schlusskurse werden geladen …");
 
   try {
     const response = await fetch(`/api/history?isin=${encodeURIComponent(isin)}`);
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error?.message ?? "Die Anfrage ist fehlgeschlagen.");
+    if (!response.ok) {
+      renderDebugOutput(payload.error?.debug);
+      throw new Error(payload.error?.message ?? "Die Anfrage ist fehlgeschlagen.");
+    }
 
+    renderDebugOutput(payload.debug);
     document.querySelector("#instrument-name").textContent = payload.name;
     const currencyLabel = payload.currency ?? "Währung nicht angegeben";
     document.querySelector("#instrument-meta").textContent = `${payload.isin}  ·  ${payload.symbol}  ·  ${payload.exchange}  ·  ${currencyLabel}`;

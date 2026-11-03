@@ -33,6 +33,8 @@ Die ausfuehrliche Mermaid-Architektur und der Code-Rundgang werden gemaess der a
 
 `MARKETSTACK_API_KEY` wird nur serverseitig aus der Prozessumgebung oder einer lokalen, von Git ignorierten `.env` geladen. Ein Schluessel gehoert nie in Quellcode, Browser-Dateien, Logs, Chat oder Git.
 
+`APP_DEBUG` steuert die Diagnosezeilen der API und Browserdarstellung. Ohne expliziten Wert ist die Ausgabe in Debug-Builds aktiv und in Release-Builds deaktiviert; `APP_DEBUG=false` deaktiviert sie auch lokal.
+
 ## Entwicklungschecks
 
 - `cargo fmt --check`: Rust-Formatierung pruefen.

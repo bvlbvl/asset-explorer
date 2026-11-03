@@ -26,6 +26,8 @@ pub struct MonthlyHistory {
     pub from: NaiveDate,
     pub to: NaiveDate,
     pub points: Vec<DailyClose>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub debug: Option<Vec<String>>,
 }
 
 pub fn normalize_isin(value: &str) -> String {
@@ -107,9 +109,18 @@ pub fn previous_calendar_month(today: NaiveDate) -> (NaiveDate, NaiveDate) {
     (first_of_previous_month, last_of_previous_month)
 }
 
+#[allow(dead_code)]
+pub fn calculate_growth_percent(start_value: f64, current_value: f64) -> f64 {
+    if start_value == 0.0 {
+        return 0.0;
+    }
+
+    ((current_value - start_value) / start_value) * 100.0
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{is_valid_isin, normalize_isin, previous_calendar_month};
+    use super::{calculate_growth_percent, is_valid_isin, normalize_isin, previous_calendar_month};
     use chrono::NaiveDate;
 
     #[test]
@@ -117,6 +128,12 @@ mod tests {
         assert_eq!(normalize_isin("  ie00b0m62q58 "), "IE00B0M62Q58");
         assert!(is_valid_isin("IE00B0M62Q58"));
         assert!(!is_valid_isin("IE00B0M62Q59"));
+    }
+
+    #[test]
+    fn calculates_percentage_growth_from_the_first_chart_point() {
+        assert!((calculate_growth_percent(100.0, 110.0) - 10.0).abs() < 0.0001);
+        assert!((calculate_growth_percent(100.0, 90.0) + 10.0).abs() < 0.0001);
     }
 
     #[test]

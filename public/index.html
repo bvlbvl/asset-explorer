@@ -62,11 +62,16 @@
 
         <div id="chart-wrap" class="chart-wrap" hidden>
           <canvas id="history-chart" role="img" aria-label="Chart der täglichen Schlusskurse"></canvas>
+          <div id="chart-hud" class="chart-hud" hidden aria-live="polite"></div>
         </div>
         <div id="empty-state" class="empty-state">
           <div class="empty-mark" aria-hidden="true">↗</div>
           <p>Der Verlauf erscheint hier.</p>
         </div>
+        <section id="debug-output" class="debug-output" hidden aria-live="polite" aria-label="Abfragediagnose">
+          <p class="eyebrow">ABFRAGE-DETAILS</p>
+          <ol id="debug-steps"></ol>
+        </section>
         <p id="status-message" class="status-message" role="status">Bereit zur Abfrage.</p>
       </section>
 
