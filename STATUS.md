@@ -12,6 +12,7 @@
 - Der Browser zeigt Instrument, Zeitraum, letzten Schlusskurs, Datenanzahl und Chart.
 - Eine unbekannte, aber syntaktisch gueltige ISIN wird mit einer klaren Meldung abgelehnt.
 - Marketstack wird ueber einen Backend-Adapter angesprochen; `.env` bleibt lokal und ist von Git ausgeschlossen.
+- Die Architektur-Dokumentation ist in `docs/ARCHITECTURE.md` ergänzt und mit dem tatsächlichen Code-, API- und Teststand abgeglichen.
 
 ## Gepruefte ISIN-Zuordnungen
 
@@ -30,6 +31,7 @@ Dies sind explizite Testzuordnungen und kein allgemeiner ISIN-Suchdienst. Vor je
 
 - `cargo test`: 4 Tests bestanden; Tests verwenden Fake-Daten und kein Netzwerk.
 - `cargo fmt --check`: bestanden.
+- Dokumentationscheck: `docs/ARCHITECTURE.md` bezieht sich auf die realen Module `src/main.rs`, `src/api.rs`, `src/service.rs`, `src/domain.rs`, `src/marketstack.rs`, `public/app.js` und `public/index.html`.
 - Manueller Marketstack-Smoke-Test fuer `IE00B0M62Q58` / `IQQW.XETRA`: 22 Tageswerte fuer Oktober 2026; Intraday wurde mit Tarifbeschraenkung abgelehnt.
 - Browser-Smoke-Test: erfolgreiche Chartdarstellung und klare Meldung fuer eine nicht zugeordnete ISIN.
 
