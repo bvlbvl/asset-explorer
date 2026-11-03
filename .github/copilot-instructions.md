@@ -13,6 +13,7 @@ Bearbeite die aktive Task, sofern die aktuelle ausdrueckliche Nutzeranweisung si
 - Folge bei Umsetzung dem Prozess in [PIV.md](../PIV.md). Arbeite klein, erklaerbar und risikogerecht; erklaere neue Rust-Konzepte knapp fuer einen Anfaenger.
 - Frage nur bei wesentlichen, nicht aus Repository und Anforderungen ableitbaren Entscheidungen. Sonstige Unsicherheiten bleiben ausdruecklich offen.
 - Halte Fortschrittsmeldungen und Abschluesse knapp. Wiederhole keine bereits bekannten Plaene oder langen Dokumentinhalte; erkunde nur den relevanten Codepfad.
+- Fuer einen ausdruecklich angeforderten Projektabschluss mit Statusabgleich und Commit kann der Prompt [Wrap-up](prompts/wrap-up.prompt.md) verwendet werden. Er ersetzt nicht die Pflicht, sachfremde Nutzer-Aenderungen zu schuetzen.
 - Bewahre Nutzer-Aenderungen. Fuehre keine Commits, Branches oder destruktiven Git-Aktionen ohne ausdruecklichen Auftrag aus.
 - Verwende Recherche-Subagents nur, wenn der Nutzer darum bittet oder sie fuer eine belegte Anbieterrecherche unverzichtbar sind; frage vorher.
 

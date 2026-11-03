@@ -4,18 +4,25 @@ use crate::domain::{
 };
 use crate::marketstack::{IsinResolution, MarketDataProvider, ProviderError};
 use chrono::Utc;
+use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Error)]
 pub enum HistoryError {
     #[error("Bitte gib eine gueltige ISIN mit korrekter Pruefziffer ein.")]
     InvalidIsin,
+    #[error("Das gespeicherte Marketstack-Symbol ist ungueltig.")]
+    InvalidSavedSymbol { symbol: String },
+    #[error("Das gespeicherte Symbol {symbol} wurde fuer die ISIN {isin} nicht bestaetigt.")]
+    UnknownSavedSymbol { isin: String, symbol: String },
     #[error("Fuer diese ISIN konnte kein kompatibles Marketstack-Symbol aufgeloest werden.")]
     UnsupportedIsin { stage: &'static str, detail: String },
     #[error("Fuer diesen Zeitraum wurden keine Schlusskurse gefunden.")]
     NoData {
         instrument: Instrument,
+        stage: &'static str,
         attempts: Vec<String>,
         from: chrono::NaiveDate,
         to: chrono::NaiveDate,
@@ -34,18 +41,25 @@ impl HistoryError {
             Self::InvalidIsin => vec![
                 "ISIN-Pruefung fehlgeschlagen: Format oder Pruefziffer ist ungueltig.".to_owned(),
             ],
+            Self::InvalidSavedSymbol { symbol } => vec![format!(
+                "Wiederverwendetes Marketstack-Symbol ist ungueltig: {symbol}."
+            )],
+            Self::UnknownSavedSymbol { isin, symbol } => vec![format!(
+                "Gespeichertes Symbol {symbol} ist fuer ISIN {isin} nicht serverseitig bestaetigt."
+            )],
             Self::UnsupportedIsin { stage, detail } => vec![
                 "ISIN-Format und Pruefziffer sind gueltig.".to_owned(),
                 format!("{stage}: {detail}"),
             ],
             Self::NoData {
                 instrument,
+                stage,
                 attempts,
                 from,
                 to,
             } => {
                 let mut steps = vec![format!(
-                    "Ticker-Aufloesung: {} ({}){}.",
+                    "{stage}: {} ({}){}.",
                     instrument.symbol,
                     instrument.name,
                     if instrument.exchange.is_empty() {
@@ -89,49 +103,92 @@ impl HistoryError {
 #[derive(Clone)]
 pub struct HistoryService {
     provider: Arc<dyn MarketDataProvider>,
+    resolved_instruments: Arc<RwLock<HashMap<(String, String), Instrument>>>,
 }
 
 impl HistoryService {
     pub fn new(provider: Arc<dyn MarketDataProvider>) -> Self {
-        Self { provider }
+        Self {
+            provider,
+            resolved_instruments: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 
     pub async fn previous_month(&self, raw_isin: &str) -> Result<MonthlyHistory, HistoryError> {
+        self.load_month(raw_isin, None).await
+    }
+
+    pub async fn previous_month_with_symbol(
+        &self,
+        raw_isin: &str,
+        symbol: &str,
+    ) -> Result<MonthlyHistory, HistoryError> {
+        self.load_month(raw_isin, Some(symbol)).await
+    }
+
+    async fn load_month(
+        &self,
+        raw_isin: &str,
+        saved_symbol: Option<&str>,
+    ) -> Result<MonthlyHistory, HistoryError> {
         let isin = normalize_isin(raw_isin);
         if !is_valid_isin(&isin) {
             return Err(HistoryError::InvalidIsin);
         }
+        if let Some(symbol) = saved_symbol.filter(|symbol| !is_valid_marketstack_symbol(symbol)) {
+            return Err(HistoryError::InvalidSavedSymbol {
+                symbol: symbol.to_owned(),
+            });
+        }
 
-        let instruments = match resolve_known_instrument(&isin) {
-            Some(instrument) => vec![instrument],
-            None => {
-                let resolution = self
-                    .provider
-                    .resolve_instrument_for_isin(&isin)
-                    .await
-                    .map_err(|source| HistoryError::Provider {
-                        source,
-                        stage: "Ticker-Aufloesung (OpenFIGI + Marketstack Tickers)",
-                        instrument: None,
-                    })?;
+        let instruments = if let Some(symbol) = saved_symbol {
+            let key = (isin.clone(), symbol.to_owned());
+            let instrument = self.resolved_instruments.read().await.get(&key).cloned();
+            vec![instrument.ok_or_else(|| HistoryError::UnknownSavedSymbol {
+                isin: isin.clone(),
+                symbol: symbol.to_owned(),
+            })?]
+        } else {
+            match resolve_known_instrument(&isin) {
+                Some(instrument) => vec![instrument],
+                None => {
+                    let resolution = self
+                        .provider
+                        .resolve_instrument_for_isin(&isin)
+                        .await
+                        .map_err(|source| {
+                            let stage = match source.provider_name() {
+                                Some("OpenFIGI") => "OpenFIGI ISIN-Aufloesung",
+                                Some("Marketstack Tickers") => {
+                                    "Marketstack Listing-Abgleich (/tickers)"
+                                }
+                                _ => "Ticker-Aufloesung (OpenFIGI + Marketstack Tickers)",
+                            };
+                            HistoryError::Provider {
+                                source,
+                                stage,
+                                instrument: None,
+                            }
+                        })?;
 
-                match resolution {
-                    IsinResolution::Found(resolved) => resolved
-                        .into_iter()
-                        .map(|resolved| Instrument {
-                            isin: isin.clone(),
-                            symbol: resolved.symbol,
-                            name: resolved
-                                .name
-                                .unwrap_or_else(|| "Name von OpenFIGI nicht geliefert".to_owned()),
-                            exchange: resolved.exchange.unwrap_or_else(|| {
-                                "Boerse von Marketstack nicht geliefert".to_owned()
-                            }),
-                            currency: None,
-                        })
-                        .collect(),
-                    IsinResolution::NotFound { stage, detail } => {
-                        return Err(HistoryError::UnsupportedIsin { stage, detail });
+                    match resolution {
+                        IsinResolution::Found(resolved) => resolved
+                            .into_iter()
+                            .map(|resolved| Instrument {
+                                isin: isin.clone(),
+                                symbol: resolved.symbol,
+                                name: resolved.name.unwrap_or_else(|| {
+                                    "Name von OpenFIGI nicht geliefert".to_owned()
+                                }),
+                                exchange: resolved.exchange.unwrap_or_else(|| {
+                                    "Boerse von Marketstack nicht geliefert".to_owned()
+                                }),
+                                currency: None,
+                            })
+                            .collect(),
+                        IsinResolution::NotFound { stage, detail } => {
+                            return Err(HistoryError::UnsupportedIsin { stage, detail });
+                        }
                     }
                 }
             }
@@ -154,7 +211,11 @@ impl HistoryService {
                 .await
                 .map_err(|source| HistoryError::Provider {
                     source,
-                    stage: "Kursabruf (Marketstack EOD)",
+                    stage: if saved_symbol.is_some() {
+                        "Kursabruf mit wiederverwendetem Symbol (Marketstack EOD)"
+                    } else {
+                        "Kursabruf (Marketstack EOD)"
+                    },
                     instrument: Some(instrument.clone()),
                 })?;
             points.retain(|point| point.date >= from && point.date <= to);
@@ -179,13 +240,34 @@ impl HistoryService {
         let Some((instrument, points)) = loaded_history else {
             return Err(HistoryError::NoData {
                 instrument: preferred_instrument,
+                stage: if saved_symbol.is_some() {
+                    "Kursabruf mit wiederverwendetem Symbol (Marketstack EOD)"
+                } else {
+                    "Marketstack EOD"
+                },
                 attempts,
                 from,
                 to,
             });
         };
 
+        if saved_symbol.is_none() {
+            self.resolved_instruments.write().await.insert(
+                (instrument.isin.clone(), instrument.symbol.clone()),
+                instrument.clone(),
+            );
+        }
+
         let mut debug = attempts;
+        if saved_symbol.is_some() {
+            debug.insert(
+                0,
+                format!(
+                    "Kursabruf mit wiederverwendetem Symbol: {}.",
+                    instrument.symbol
+                ),
+            );
+        }
         debug.extend([
             format!("Ticker: {}", instrument.symbol),
             format!("Name: {}", instrument.name),
@@ -206,6 +288,14 @@ impl HistoryService {
     }
 }
 
+fn is_valid_marketstack_symbol(symbol: &str) -> bool {
+    !symbol.is_empty()
+        && symbol.len() <= 64
+        && symbol
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{HistoryError, HistoryService};
@@ -216,6 +306,7 @@ mod tests {
     use async_trait::async_trait;
     use chrono::{NaiveDate, Utc};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     struct FakeProvider {
         points: Vec<DailyClose>,
@@ -250,6 +341,64 @@ mod tests {
             } else {
                 IsinResolution::Found(self.resolved_instruments.clone())
             })
+        }
+    }
+
+    struct SavedSymbolProvider {
+        resolve_calls: Arc<AtomicUsize>,
+        close_calls: Arc<AtomicUsize>,
+    }
+
+    struct OpenFigiFailureProvider;
+
+    #[async_trait]
+    impl MarketDataProvider for OpenFigiFailureProvider {
+        async fn daily_closes(
+            &self,
+            _symbol: &str,
+            _from: NaiveDate,
+            _to: NaiveDate,
+        ) -> Result<Vec<DailyClose>, ProviderError> {
+            panic!("EOD must not be called when ISIN resolution fails");
+        }
+
+        async fn resolve_instrument_for_isin(
+            &self,
+            _isin: &str,
+        ) -> Result<IsinResolution, ProviderError> {
+            Err(ProviderError::AtProvider {
+                provider: "OpenFIGI",
+                source: Box::new(ProviderError::Unavailable),
+            })
+        }
+    }
+
+    #[async_trait]
+    impl MarketDataProvider for SavedSymbolProvider {
+        async fn daily_closes(
+            &self,
+            symbol: &str,
+            from: NaiveDate,
+            _to: NaiveDate,
+        ) -> Result<Vec<DailyClose>, ProviderError> {
+            assert_eq!(symbol, "AAPL");
+            self.close_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(vec![DailyClose {
+                date: from,
+                close: 150.0,
+            }])
+        }
+
+        async fn resolve_instrument_for_isin(
+            &self,
+            _isin: &str,
+        ) -> Result<IsinResolution, ProviderError> {
+            self.resolve_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(IsinResolution::Found(vec![ResolvedInstrument {
+                symbol: "AAPL".to_owned(),
+                name: Some("Apple Inc.".to_owned()),
+                exchange: Some("NASDAQ".to_owned()),
+            }]))
         }
     }
 
@@ -330,6 +479,77 @@ mod tests {
                 .any(|line| line.contains("AAPL"))
         );
         assert_eq!(history.points.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn reuses_saved_symbol_without_resolving_isin_again() {
+        let resolve_calls = Arc::new(AtomicUsize::new(0));
+        let close_calls = Arc::new(AtomicUsize::new(0));
+        let service = HistoryService::new(Arc::new(SavedSymbolProvider {
+            resolve_calls: Arc::clone(&resolve_calls),
+            close_calls: Arc::clone(&close_calls),
+        }));
+
+        let first_history = service.previous_month("US0378331005").await.unwrap();
+        assert_eq!(first_history.symbol, "AAPL");
+
+        let history = service
+            .previous_month_with_symbol("US0378331005", "AAPL")
+            .await
+            .unwrap();
+
+        assert_eq!(history.isin, "US0378331005");
+        assert_eq!(history.symbol, "AAPL");
+        assert_eq!(history.name, "Apple Inc.");
+        assert_eq!(history.points.len(), 1);
+        assert!(
+            history
+                .debug
+                .as_ref()
+                .unwrap()
+                .iter()
+                .any(|step| { step.contains("wiederverwendetem Symbol") && step.contains("AAPL") })
+        );
+        assert_eq!(resolve_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(close_calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn identifies_openfigi_resolution_errors_in_service_diagnostics() {
+        let service = HistoryService::new(Arc::new(OpenFigiFailureProvider));
+
+        let error = service.previous_month("US0378331005").await.unwrap_err();
+
+        match error {
+            HistoryError::Provider { stage, source, .. } => {
+                assert_eq!(stage, "OpenFIGI ISIN-Aufloesung");
+                assert!(source.diagnostic().contains("OpenFIGI"));
+            }
+            other => panic!("expected a provider error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_saved_symbol_not_previously_resolved_for_isin() {
+        let (from, _) = previous_calendar_month(Utc::now().date_naive());
+        let provider = FakeProvider {
+            points: vec![DailyClose {
+                date: from,
+                close: 150.0,
+            }],
+            resolved_instruments: Vec::new(),
+            empty_symbols: Vec::new(),
+        };
+        let service = HistoryService::new(Arc::new(provider));
+
+        let result = service
+            .previous_month_with_symbol("US0378331005", "MSFT")
+            .await;
+
+        assert!(
+            result.is_err(),
+            "unverified symbols must not reach Marketstack"
+        );
     }
 
     #[tokio::test]

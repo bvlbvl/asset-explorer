@@ -1,6 +1,6 @@
 # Product Requirements Document: Aktienkurs-Explorer
 
-**Status:** Entwurf  
+**Status:** Browser-MVP umgesetzt; Erweiterungen geplant
 **Stand:** 2026-11-03
 
 **Projektkontext:** [PAD](PAD.md) · [Status](STATUS.md) · [Aktuelle Task](TASK.md) · [PIV-Prozess](PIV.md)
@@ -11,7 +11,7 @@ Der Aktienkurs-Explorer ist ein Rust-Lernprojekt. Nutzer geben im Browser eine I
 
 Marketstack ist der vorgesehene Marktdatenanbieter. Sein API-Schluessel wird lokal beziehungsweise serverseitig als `MARKETSTACK_API_KEY` bereitgestellt. Da Marketstack EOD-Daten anhand eines Symbols abfragt, verwendet der MVP zuerst explizit gepflegte ISIN-Zuordnungen und danach OpenFIGI als ISIN-Lookup. Der OpenFIGI-Ticker wird mit Marketstacks `/tickers`-Katalog abgeglichen; verwendet wird nur ein zur Boerse passendes Listing mit `has_eod=true`. Ein OpenFIGI-Treffer allein garantiert keine verfuegbaren Kursdaten; mehrdeutige Listings werden nicht geraten.
 
-Das Lernziel bleibt zentral: Rust-Konzepte, Tests, API-Design und eine schrittweise Client-Server-Architektur sollen anhand des Produkts nachvollziehbar eingeuebt werden.
+Das Lernziel bleibt zentral: Rust-Konzepte, Tests, API-Design und eine schrittweise Client-Server-Architektur sollen anhand des Produkts nachvollziehbar eingeuebt werden. Ein besonderes Ziel ist, einen agentischen GitHub-Copilot-Workflow von Anforderungen und Planung bis Implementierung, Verifikation und Dokumentation zu lernen, ohne die Implementierung selbst von Hand zu schreiben. Der Nutzer steuert Entscheidungen und prueft Ergebnisse; der Agent erledigt die Codearbeit.
 
 ## 2. Ziele und Nicht-Ziele
 
@@ -31,9 +31,11 @@ Nicht-Ziele des MVP:
 
 ## 3. Zielgruppen und Nutzungsszenarien
 
-**Primaere Zielgruppe:** Der Projektentwickler als Rust-Anfaenger, der durch ein konkretes Beispiel Programmiergrundlagen, Tests und eine einfache Client-Server-Architektur lernen moechte.
+**Primaere Zielgruppe:** Der Projektentwickler als Rust-Anfaenger, der durch ein konkretes Beispiel Programmiergrundlagen, Tests und eine einfache Client-Server-Architektur lernen moechte. Die Codearbeit wird im agentischen Workflow an GitHub Copilot delegiert; der Nutzer lernt aus Anforderungen, Reviews, Tests und Erklaerungen.
 
 **Primaeres Nutzungsszenario:** Ein Nutzer gibt eine ISIN ein und sieht den Verlauf der taeglichen Schlusskurse des letzten abgeschlossenen Kalendermonats. Ist die ISIN ungueltig, nicht zugeordnet oder gibt es keine Kursdaten, erhaelt er eine verstaendliche Rueckmeldung.
+
+**Agentisches Lernszenario:** Der Projektentwickler beschreibt Anforderungen und Abnahmekriterien an GitHub Copilot. Der Agent liest den Repository-Kontext, plant klein, schreibt Tests, implementiert, verifiziert und aktualisiert Dokumentation. Der Nutzer lernt aus Erklaerungen, Tests und Review, ohne den Anwendungscode manuell zu verfassen.
 
 ## 4. Funktionale Anforderungen
 
@@ -44,6 +46,13 @@ Nicht-Ziele des MVP:
 - Eine gepflegte Marketstack-Symbolzuordnung wird bevorzugt; unbekannte ISINs werden ueber OpenFIGI auf einen moeglichen Ticker und Namen abgebildet und anschliessend mit Marketstacks `/tickers`-Katalog abgeglichen.
 - Der Kursabruf nutzt nur Listings mit `has_eod=true`, passend zur ermittelten Boerse. Fehlende oder mehrdeutige Zuordnungen erhalten eine verstaendliche Rueckmeldung.
 - Name, ISIN, Marketstack-Symbol und Boersenplatz werden am Ergebnis angezeigt.
+
+### Session-Historie
+
+- Erfolgreich geladene ISINs erscheinen unter dem Eingabefeld in einer anklickbaren Historie fuer die aktuelle Browser-Session.
+- Ein Klick laedt die Monatskurse frisch und benoetigt keine erneute ISIN-Eingabe.
+- `sessionStorage` enthaelt ausschliesslich ISIN und erfolgreich verwendetes Marketstack-Symbol; Kurswerte werden nicht gespeichert. Ein erneuter Abruf derselben ISIN aktualisiert den vorhandenen Eintrag.
+- Das Backend verwendet ein geliefertes Symbol nur fuer ein zuvor serverseitig bestaetigtes ISIN-/Listing-Paar. Bei einem Cache-Miss wird das Symbol ignoriert und die ISIN ueber den normalen geprueften Pfad aufgeloest.
 
 ### Schlusskurse und Chart
 
@@ -68,7 +77,7 @@ Nicht-Ziele des MVP:
 - ISIN-/Symbolzuordnung, Anwendungslogik, Marketstack-Adapter und HTTP-Endpunkte bleiben logisch getrennt. Fuer den Lernprototyp genuegt ein einzelnes Rust-Paket mit Modulen.
 - API-Schluessel werden ueber eine Umgebungsvariable oder lokale, nicht eingecheckte Konfiguration bereitgestellt. Sie duerfen weder im Browser ausgeliefert noch in Git eingecheckt werden.
 - Automatisierte Tests verwenden Fake-/Mock-Antworten und benoetigen weder einen Live-API-Key noch eine Netzwerkverbindung.
-- Der aktuelle Browser-Client ist statisches HTML, CSS und JavaScript; er kommuniziert mit `GET /api/history?isin=...`.
+- Der aktuelle Browser-Client ist statisches HTML, CSS und JavaScript; er kommuniziert mit `GET /api/history?isin=...` und kann fuer Historieneintraege ein optionales `symbol` zur Wiederverwendung eines bestaetigten Listings senden.
 - Die lokale Konfiguration wird aus `.env` geladen; `.env` ist von Git ausgeschlossen.
 
 ## 6. Nicht-funktionale Anforderungen
@@ -91,11 +100,12 @@ Nicht-Ziele des MVP:
 6. Browser-Code enthaelt keinen Marketstack-API-Schluessel und ruft Marketstack nicht direkt auf.
 7. Fachlogik und API-Tests laufen mit Fake-/Mock-Daten ohne Netzwerk und ohne API-Schluessel.
 8. Anbieterfelder werden vor der Ausgabe auf eigene, stabile JSON-Datentypen abgebildet.
+9. Die Session-Historie speichert keine Kurswerte; jeder Klick ruft die Monatskurse neu ab und kann ein zuvor bestaetigtes Listing ohne erneute Aufloesung verwenden.
 
 ## 8. Vorgesehene naechste Schritte
 
-1. **Symbolzuordnung ausbauen:** weitere ISINs nur mit verifizierter Boerse und Marketstack-Symbolzuordnung aufnehmen.
-2. **Anbieter- und API-Tests:** Adapter-Mapping, Fehlercodes und HTTP-Antworten mit Mock-Antworten abdecken.
+1. **Providerbedingungen verifizieren:** Nutzungs-, Anzeige- und Attributionsregeln anhand aktueller offizieller Quellen dokumentieren.
+2. **API und Browser erweitern:** weitere Endpunkte und Webseiten als abgegrenzte Lernschritte ergaenzen; sie gehoeren noch nicht zum aktuellen MVP.
 3. **Datenhinweise vervollstaendigen:** bekannte Waehrung und Zeitstempel je Boersenlisting verlaesslich liefern.
 4. **Android-Vorbereitung:** den JSON-Vertrag dokumentieren; eine native App bleibt ausserhalb des MVP.
 

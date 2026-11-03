@@ -24,6 +24,12 @@ pub enum ProviderError {
         status: u16,
         code: Option<String>,
     },
+    #[error("{provider}: {source}")]
+    AtProvider {
+        provider: &'static str,
+        #[source]
+        source: Box<ProviderError>,
+    },
     #[error("Marketstack hat eine ungueltige Antwort geliefert.")]
     InvalidResponse,
 }
@@ -45,8 +51,34 @@ impl ProviderError {
                     .map(|code| format!(" (Fehlercode: {code})"))
                     .unwrap_or_default()
             ),
+            Self::AtProvider { provider, source } => {
+                format!("{provider}: {}", source.diagnostic())
+            }
             Self::InvalidResponse => "Antwort des Anbieters hat ein ungueltiges Format.".to_owned(),
         }
+    }
+
+    pub fn provider_name(&self) -> Option<&'static str> {
+        match self {
+            Self::AtProvider { provider, .. } | Self::DetailedRejected { provider, .. } => {
+                Some(provider)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn root_cause(&self) -> &Self {
+        match self {
+            Self::AtProvider { source, .. } => source.root_cause(),
+            _ => self,
+        }
+    }
+}
+
+fn at_provider(provider: &'static str, source: ProviderError) -> ProviderError {
+    ProviderError::AtProvider {
+        provider,
+        source: Box::new(source),
     }
 }
 
@@ -253,16 +285,17 @@ impl MarketstackProvider {
             .send()
             .await
             .map_err(|error| {
-                if error.is_timeout() {
+                let source = if error.is_timeout() {
                     ProviderError::Timeout
                 } else {
                     ProviderError::Unavailable
-                }
+                };
+                at_provider("OpenFIGI", source)
             })?;
 
         let status = response.status();
         if status == StatusCode::TOO_MANY_REQUESTS {
-            return Err(ProviderError::RateLimited);
+            return Err(at_provider("OpenFIGI", ProviderError::RateLimited));
         }
         if !status.is_success() {
             let code = response
@@ -413,7 +446,7 @@ impl MarketDataProvider for MarketstackProvider {
         let payload = response
             .json::<Vec<OpenfigiMappingResponse>>()
             .await
-            .map_err(|_| ProviderError::InvalidResponse)?;
+            .map_err(|_| at_provider("OpenFIGI", ProviderError::InvalidResponse))?;
         let Some(job) = payload.into_iter().next() else {
             return Ok(IsinResolution::NotFound {
                 stage: "OpenFIGI",
@@ -444,7 +477,10 @@ impl MarketDataProvider for MarketstackProvider {
 
         let ticker = entry.ticker.unwrap_or_default();
         let exchange = entry.exch_code;
-        let listings = self.search_marketstack_tickers(&ticker).await?;
+        let listings = self
+            .search_marketstack_tickers(&ticker)
+            .await
+            .map_err(|source| at_provider("Marketstack Tickers", source))?;
         match select_marketstack_listings(
             &ticker,
             exchange.as_deref(),
@@ -462,7 +498,23 @@ impl MarketDataProvider for MarketstackProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::{MarketstackTickerResponse, OpenfigiMappingResponse, select_marketstack_listings};
+    use super::{
+        MarketstackTickerResponse, OpenfigiMappingResponse, ProviderError,
+        select_marketstack_listings,
+    };
+
+    #[test]
+    fn attributes_transient_errors_to_the_provider_stage() {
+        let error = ProviderError::AtProvider {
+            provider: "OpenFIGI",
+            source: Box::new(ProviderError::Unavailable),
+        };
+
+        assert_eq!(
+            error.diagnostic(),
+            "OpenFIGI: Verbindung zum Anbieter fehlgeschlagen."
+        );
+    }
 
     #[test]
     fn parses_openfigi_ticker_from_isin_mapping_response() {

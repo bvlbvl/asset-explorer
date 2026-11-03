@@ -17,11 +17,15 @@ Die Kernkomponenten sind:
 flowchart LR
     User[Benutzer im Browser] --> Form[ISIN-Formular in public/index.html]
     Form --> Browser[public/app.js / Chart.js]
-    Browser -->|GET /api/history?isin=...| API[axum-Route in src/api.rs]
+    Browser -->|GET /api/history?isin=... optional symbol| API[axum-Route in src/api.rs]
+    Browser -->|ISIN + Symbol, keine Kurse| Session[(sessionStorage)]
+    Session --> Browser
     API --> Service[HistoryService in src/service.rs]
     Service --> Domain[domain.rs: ISIN-Prüfung, Monatslogik, Symbolzuordnung]
     Service --> Provider[MarketstackProvider in src/marketstack.rs]
-    Provider -->|GET /v1/eod| Marketstack[Marketstack API]
+    Provider -->|POST /v3/mapping| OpenFIGI[OpenFIGI API]
+    OpenFIGI --> Provider
+    Provider -->|GET /v1/tickers und /v1/eod| Marketstack[Marketstack API]
     Marketstack --> Provider
     Provider --> Service
     Service --> API
@@ -29,16 +33,16 @@ flowchart LR
     Browser -->|Chart.js| User
 ```
 
-## 2. Request-Ablauf für GET /api/history?isin=...
+## 2. Request-Ablauf für GET /api/history
 
 Der komplette Ablauf beginnt im Browser über das Formular in `public/index.html` und dem Script in `public/app.js`.
 
 1. Der Benutzer gibt eine ISIN ein und sendet das Formular.
-2. `public/app.js` ruft `fetch('/api/history?isin=...')` auf.
+2. `public/app.js` ruft bei einer neuen Eingabe `fetch('/api/history?isin=...')` auf.
 3. Die Axum-Route in `src/api.rs` verarbeitet die Anfrage mit `Query<HistoryQuery>` und übergibt die ISIN an `HistoryService::previous_month`.
 4. `HistoryService` normalisiert die Eingabe mit `normalize_isin` und prüft sie mit `is_valid_isin`.
 5. Wenn die ISIN syntaktisch ungültig ist, endet der Ablauf mit `HistoryError::InvalidIsin`.
-6. Danach wird mit `resolve_known_instrument` eine explizite Zuordnung gesucht. Ein unbekannter Wert wird als `UnsupportedIsin` abgelehnt.
+6. Danach wird mit `resolve_known_instrument` eine explizite Zuordnung gesucht. Bei unbekannten, aber gueltigen ISINs folgt die Aufloesung ueber OpenFIGI und den Marketstack-`/tickers`-Katalog; fehlende oder mehrdeutige Zuordnungen enden mit einer stufenspezifischen `UnsupportedIsin`-Diagnose.
 7. Der letzte abgeschlossene Kalendermonat wird mit `previous_calendar_month(Utc::now().date_naive())` bestimmt.
 8. Der Service ruft `provider.daily_closes(symbol, from, to)` auf. Der Provider ist `MarketstackProvider`.
 9. `MarketstackProvider` baut den echten Marketstack-Request auf:
@@ -47,6 +51,8 @@ Der komplette Ablauf beginnt im Browser über das Formular in `public/index.html
 10. Die Antwort wird in interne Datentypen umgewandelt.
 11. Nur Werte innerhalb des Monatsbereichs werden beibehalten, nach Datum sortiert und als `MonthlyHistory` an den HTTP-Handler zurückgegeben.
 12. Der Browser rendert anschließend `payload.points` als Chart und zeigt Name, ISIN, Symbol, Börse, Zeitraum und letzten Schlusskurs an.
+
+Bei einem erfolgreichen Abruf legt der Browser nur `{isin, symbol}` in `sessionStorage` ab. Ein Klick auf einen Historieneintrag sendet beide Werte; `HistoryService` akzeptiert das Symbol nur, wenn genau dieses ISIN-/Listing-Paar zuvor serverseitig erfolgreich aufgelöst wurde. Der Service ruft die EOD-Daten dann frisch ab, ohne OpenFIGI oder `/tickers` erneut aufzurufen. Bei einem Cache-Miss wird das gelieferte Symbol ignoriert und die ISIN normal aufgelöst. Kurswerte werden weder im Browser-Speicher noch im Backend-Cache gehalten.
 
 ## 3. Verantwortung der Module und des statischen Browser-Clients
 
@@ -69,6 +75,8 @@ Dieses Modul steuert den Anwendungsablauf:
 - `HistoryService` kapselt den `MarketDataProvider`.
 - `HistoryError` definiert die fachlichen Fehlerfälle.
 - `previous_month` führt die Reihenfolge aus: Normalisierung → Validierung → Zuordnung → Monatsermittlung → Provider-Aufruf → Sortierung → Ergebnisbildung.
+- Erfolgreich geladene Instrumente werden während der Prozesslaufzeit nach ISIN und Symbol zwischengespeichert, damit ein bestätigtes Listing erneut verwendet werden kann. Der Cache enthält keine Kursdaten.
+- `previous_month_with_symbol` prüft das gelieferte Symbol und das bestätigte ISIN-/Symbol-Paar; nicht bestaetigte Paare erreichen den Marketstack-Provider nicht.
 
 ### `src/marketstack.rs`
 
@@ -85,13 +93,14 @@ Der Adapter ist die einzige Stelle, an der Marketstack direkt angesprochen wird:
 Der HTTP-Layer übersetzt fachliche Fehler in HTTP-Responses:
 
 - `GET /api/history` ist die einzige Route für die Monatsabfrage.
-- Es werden nur JSON-Responses mit `error.code` und `error.message` geliefert.
-- Das Mapping ist bewusst auf klare Zustände beschränkt:
+- Das optionale Query-Feld `symbol` dient nur der Wiederverwendung eines serverseitig bestaetigten Listings; ein Cache-Miss fuehrt zur normalen ISIN-Aufloesung.
+- Fehlerantworten enthalten `error.code`, `error.message`, die Fehlerstufe und bei aktiviertem `APP_DEBUG` einzelne Diagnoseschritte.
+- Fehlercodes unterscheiden unter anderem:
   - `invalid_isin` → 400 Bad Request
-  - `unsupported_isin` → 422 Unprocessable Entity
-  - `no_data` → 404 Not Found
-  - `provider_plan_restricted` / `provider_rate_limited` → 502 bzw. 429
-  - generische Providerfehler → 502 Bad Gateway
+  - `invalid_saved_symbol` → 400 Bad Request
+  - `openfigi_mapping_failed` / `marketstack_listing_not_found` → 422 Unprocessable Entity
+  - `no_data` / `saved_symbol_no_data` → 404 Not Found
+  - aufloesungs- und gespeicherte-Symbol-Providerfehler nennen Stufe und Symbol; Tarif- und Rate-Limit-Fehler bleiben unterscheidbar.
 
 ### `src/main.rs`
 
@@ -108,6 +117,7 @@ Der Client ist bewusst einfach und statisch:
 
 - `public/index.html` enthält das Formular, die Ergebnisblöcke und das Canvas für den Chart.
 - `public/app.js` ruft die API auf, verarbeitet `response.ok`, rendert die Daten mit Chart.js und zeigt Fehlermeldungen an.
+- Die Session-Historie in `public/app.js` speichert nur ISIN und erfolgreiches Marketstack-Symbol und aktualisiert doppelte ISINs.
 - Der Browser greift niemals direkt auf Marketstack zu und enthält keinen API-Key.
 
 ## 4. ISIN-Validierung, bekannte Symbolzuordnungen und Verhalten bei unbekannten Kennungen
@@ -126,7 +136,7 @@ Die bekannte, explizit geprüfte Zuordnungsliste ist klein und bewusst begrenzt:
 - `IE00B0M62Q58` → `IQQW.XETRA` (`Xetra`, Währung `EUR`)
 - `IE00BKM4GZ66` → `EIMI.XSWX` (`SIX Swiss Exchange`, Währung unbekannt / nicht im internen Modell gesetzt)
 
-Wichtig: Diese Liste ist kein allgemeiner ISIN-Auflösungsdienst. Unbekannte Kennungen werden nicht geraten. Der Service antwortet mit `UnsupportedIsin`, auch wenn die ISIN syntaktisch gültig ist.
+Wichtig: Diese Liste ist kein allgemeiner ISIN-Aufloesungsdienst. Unbekannte Kennungen werden ueber OpenFIGI und den Marketstack-`/tickers`-Katalog geprueft, nicht geraten. Fehlt ein Mapping oder ist das Boersenlisting mehrdeutig, antwortet der Service mit einer Diagnose fuer die konkrete Aufloesungsstufe.
 
 ## 5. Berechnung des letzten abgeschlossenen Kalendermonats und Abbildung der EOD-Antwort
 
@@ -159,6 +169,7 @@ Danach werden nur Einträge innerhalb der Monatsgrenzen behalten und nach Datum 
 - `AccessRestricted`: Tarif erlaubt den angeforderten Zugriff nicht.
 - `RateLimited`: API-Limit erreicht.
 - `Rejected`: Anbieter lehnt die Anfrage ab.
+- Transiente Fehler aus OpenFIGI und Marketstack `/tickers` behalten die konkrete Provider-Stufe.
 - `InvalidResponse`: Unvollständige oder fehlerhafte Antwort.
 
 Diese Fehler werden in `src/api.rs` als HTTP-JSON-Fehler umgewandelt. Der Server gibt dabei keine internen Stacktraces oder API-Schlüssel preis.
@@ -172,7 +183,8 @@ Der Server startet nur dann, wenn `MARKETSTACK_API_KEY` gesetzt und nicht leer i
 Die Testabdeckung setzt auf Fake-Daten statt auf Live-Marketstack:
 
 - `src/domain.rs` testet ISIN-Normalisierung und Monatsgrenzen.
-- `src/service.rs` testet erfolgreiche Sortierung und das Ablehnen einer nicht zugeordneten ISIN.
+- `src/service.rs` testet erfolgreiche Sortierung, fehlende Zuordnungen, frische Kursabrufe bei Symbolwiederverwendung und das Ablehnen nicht bestaetigter ISIN-/Symbol-Paare.
+- `src/api.rs` testet den optionalen Symbolparameter, den sicheren Fallback bei Cache-Miss und unterscheidbare Fehlercodes samt Fehlerstufe und Symbol.
 - Diese Tests laufen ohne Netzwerk und ohne gültigen API-Key.
 
 ## 7. Verifizierte Grenzen und bekannte Betriebsannahmen
@@ -180,7 +192,8 @@ Die Testabdeckung setzt auf Fake-Daten statt auf Live-Marketstack:
 Die Anwendung ist bewusst nicht als allgemeiner ISIN-Resolver oder Echtzeit-Marktdatendienst konzipiert. Die verifizierten Grenzen aus dem aktuellen Code und Status sind:
 
 - Marketstack löst ISINs nicht direkt in Börsensymbole auf; daher sind explizite Konfigurationen nötig.
-- Die aktuelle Umsetzung kennt nur die geprüften Zuordnungen für `IQQW.XETRA` und `EIMI.XSWX`.
+- Die explizit gepflegten Zuordnungen umfassen `IQQW.XETRA` und `EIMI.XSWX`; andere gültige ISINs werden über OpenFIGI und den Marketstack-`/tickers`-Katalog geprüft. Unbekannte oder mehrdeutige Zuordnungen werden nicht geraten.
+- Der Cache bestaetigter ISIN-/Listing-Paare gilt nur fuer die Prozesslaufzeit; bei einem Cache-Miss ignoriert die API das Browser-Symbol und loest die ISIN normal auf.
 - Intraday-Daten sind für die bisher validierten Instrumente im aktuellen Tarif nicht verfügbar; der MVP arbeitet mit EOD-Schlusskursen.
 - Die Börsenabdeckung und Datenverfügbarkeit hängen vom Symbol, der Börse und dem Tarifschutz ab.
 - Währungen werden nur dann angezeigt, wenn sie in der geprüften Zuordnung bekannt sind.

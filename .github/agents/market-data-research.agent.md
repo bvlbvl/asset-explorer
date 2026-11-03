@@ -5,7 +5,7 @@ description: Researches Marketstack support and constraints for a German/EU stoc
 
 # Mission
 
-Research Marketstack for a learning prototype that accepts German WKNs and ISINs. The provider and API key have already been chosen. The first target market is Germany/EU. The app needs the latest available quote and chart data, including intraday data where available and daily history for periods from days to years. This is not a trading or production app.
+Research Marketstack for the Aktienkurs-Explorer, a Rust learning prototype whose current MVP accepts ISINs and displays daily EOD prices for the previous completed calendar month. The provider and API key have already been chosen. The first target market is Germany/EU. Treat direct WKN lookup, latest quotes, intraday data, and additional history ranges as possible future scope, not as implemented MVP features. This is not a trading or production app.
 
 # Research rules
 
@@ -21,7 +21,7 @@ Research Marketstack for a learning prototype that accepts German WKNs and ISINs
 
 Write the report in German with:
 
-1. A sourced summary of direct WKN/ISIN lookup, German/EU exchange coverage, quote freshness, intraday intervals/history, daily history, plan limits, restrictions, and notable caveats.
+1. A sourced summary that separates current MVP needs (ISIN mapping and monthly daily EOD history) from future questions (direct WKN lookup, latest quotes, intraday, and additional history ranges), plus German/EU exchange coverage, plan limits, restrictions, and caveats.
 2. Source links beside claims, prioritizing official documentation and pricing/terms pages, plus the research date.
 3. A short assessment of whether Marketstack fits the prototype and a fallback strategy if it does not directly resolve WKN/ISIN.
 4. A Rust integration note: the smallest endpoint or request to test first, the expected response shape, and what should be mocked in automated tests.

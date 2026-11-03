@@ -8,9 +8,68 @@ const chartCanvas = document.querySelector("#history-chart");
 const chartHud = document.querySelector("#chart-hud");
 const debugOutput = document.querySelector("#debug-output");
 const debugSteps = document.querySelector("#debug-steps");
+const historySection = document.querySelector("#isin-history");
+const historyList = document.querySelector("#isin-history-list");
+const HISTORY_STORAGE_KEY = "aktien-history";
 let historyChart;
 let activeHistory = null;
 let selectedChartIndex = null;
+let sessionHistory = readSessionHistory();
+
+function readSessionHistory() {
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(HISTORY_STORAGE_KEY) ?? "[]");
+    if (!Array.isArray(stored)) return [];
+    return stored.filter((entry) =>
+      entry && typeof entry.isin === "string" && typeof entry.symbol === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function renderSessionHistory() {
+  historyList.replaceChildren();
+  historySection.hidden = sessionHistory.length === 0;
+
+  for (const entry of sessionHistory) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.className = "history-entry";
+    button.type = "button";
+    button.setAttribute("aria-label", `Verlauf fuer ${entry.isin} erneut laden`);
+
+    const content = document.createElement("span");
+    content.className = "history-entry-main";
+    const isin = document.createElement("strong");
+    isin.textContent = entry.isin;
+    const symbol = document.createElement("span");
+    symbol.className = "history-entry-symbol";
+    symbol.textContent = entry.symbol;
+    content.append(isin, symbol);
+    button.append(content);
+    button.addEventListener("click", () => loadHistory(entry.isin, entry.symbol));
+    item.append(button);
+    historyList.append(item);
+  }
+}
+
+function rememberSuccessfulLookup(isin, symbol) {
+  sessionHistory = sessionHistory.filter((entry) => entry.isin !== isin);
+  sessionHistory.push({ isin, symbol });
+  try {
+    sessionStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(sessionHistory));
+  } catch {
+    // Keep this session's in-memory history usable when storage is unavailable.
+  }
+  renderSessionHistory();
+}
+
+function setHistoryButtonsDisabled(disabled) {
+  historyList.querySelectorAll("button").forEach((historyButton) => {
+    historyButton.disabled = disabled;
+  });
+}
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -199,16 +258,18 @@ function renderChart(history) {
   });
 }
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const isin = input.value.trim().toUpperCase();
+async function loadHistory(rawIsin, symbol = null) {
+  const isin = rawIsin.trim().toUpperCase();
   input.value = isin;
   button.disabled = true;
+  setHistoryButtonsDisabled(true);
   renderDebugOutput(null);
   setStatus("Schlusskurse werden geladen …");
 
   try {
-    const response = await fetch(`/api/history?isin=${encodeURIComponent(isin)}`);
+    const query = new URLSearchParams({ isin });
+    if (symbol) query.set("symbol", symbol);
+    const response = await fetch(`/api/history?${query}`);
     const payload = await response.json();
     if (!response.ok) {
       renderDebugOutput(payload.error?.debug);
@@ -225,6 +286,7 @@ form.addEventListener("submit", async (event) => {
     emptyState.hidden = true;
     chartWrap.hidden = false;
     renderChart(payload);
+    rememberSuccessfulLookup(payload.isin, payload.symbol);
     setStatus("Tägliche Schlusskurse · Quelle: Marketstack", "success");
   } catch (error) {
     chartWrap.hidden = true;
@@ -241,5 +303,13 @@ form.addEventListener("submit", async (event) => {
     setStatus(error.message, "error");
   } finally {
     button.disabled = false;
+    setHistoryButtonsDisabled(false);
   }
+}
+
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  loadHistory(input.value);
 });
+
+renderSessionHistory();

@@ -6,7 +6,7 @@
 
 ## Projekt
 
-Der Aktienkurs-Explorer ist ein Rust-Lernprojekt. Ein Nutzer gibt im Browser eine ISIN ein und sieht taegliche Schlusskurse des letzten abgeschlossenen Kalendermonats als Chart. Das Produkt dient der Information und dem Lernen, nicht dem Handel oder der Anlageberatung. Die verbindlichen Produktanforderungen stehen in [PRD.md](PRD.md).
+Der Aktienkurs-Explorer ist ein Rust-Lernprojekt. Ein Nutzer gibt im Browser eine ISIN ein und sieht taegliche Schlusskurse des letzten abgeschlossenen Kalendermonats als Chart. Ein weiteres Lernziel ist ein agentischer GitHub-Copilot-Workflow: Der Nutzer steuert Anforderungen und prueft Resultate, der Agent uebernimmt die Codearbeit. Das Produkt dient der Information und dem Lernen, nicht dem Handel oder der Anlageberatung. Die verbindlichen Produktanforderungen stehen in [PRD.md](PRD.md).
 
 ## Architekturprinzipien
 
@@ -15,19 +15,20 @@ Der Aktienkurs-Explorer ist ein Rust-Lernprojekt. Ein Nutzer gibt im Browser ein
 - Browser und spaetere Clients sprechen nur mit der eigenen HTTP-API.
 - Fachlogik und Tests muessen ohne Netzwerk und API-Schluessel funktionieren.
 - ISINs werden validiert und nur ueber eine explizit gepruefte Boersen-Symbolzuordnung aufgeloest. Unbekannte Zuordnungen werden nicht geraten.
+- Erfolgreich gepruefte ISIN-/Listing-Paare duerfen im laufenden Backend wiederverwendet werden; jeder Aufruf laedt EOD-Kurse frisch. Ein clientseitig geliefertes Symbol wird nur verwendet, wenn das Paar serverseitig bestaetigt wurde.
 - Kurszeitpunkt, Boersenplatz, Waehrung und Datenqualitaet werden nur dargestellt, wenn sie bekannt oder verifiziert sind.
 
 ## Bausteine im aktuellen Entwurf
 
 - `src/domain.rs`: interne Instrument- und Kursmodelle, ISIN-Pruefung, Symbolzuordnung und Monatsgrenzen.
-- `src/service.rs`: Anwendungsablauf fuer die Monatsabfrage.
+- `src/service.rs`: Anwendungsablauf fuer die Monatsabfrage und laufzeitgebundener Cache bestaetigter Instrumente.
 - `src/marketstack.rs`: Anbieter-Schnittstelle und Marketstack-Adapter.
 - `src/api.rs`: HTTP-Route und oeffentliche Fehlerantworten.
 - `src/main.rs`: Konfiguration und Serverstart.
 - `public/`: statischer Browser-Client.
-- `GET /api/history?isin=...`: aktueller JSON-Endpunkt.
+- `GET /api/history?isin=...`: JSON-Endpunkt; ein optionales `symbol` kann ein zuvor bestaetigtes Listing wiederverwenden.
 
-Die ausfuehrliche Mermaid-Architektur und der Code-Rundgang werden gemaess der aktiven [Task](TASK.md) in `docs/ARCHITECTURE.md` erstellt. Dieses PAD bleibt eine knappe Uebersicht und soll das Detaildokument nicht duplizieren.
+Die ausfuehrliche Mermaid-Architektur und der Code-Rundgang stehen in `docs/ARCHITECTURE.md`. Dieses PAD bleibt eine knappe Uebersicht und soll das Detaildokument nicht duplizieren.
 
 ## Geheimnisse
 
