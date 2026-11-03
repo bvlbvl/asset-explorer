@@ -3,60 +3,54 @@
 **Status:** Entwurf  
 **Stand:** 2026-11-03
 
+**Projektkontext:** [PAD](PAD.md) · [Status](STATUS.md) · [Aktuelle Task](TASK.md) · [PIV-Prozess](PIV.md)
+
 ## 1. Produktueberblick
 
-Der Aktienkurs-Explorer ist ein Lernprojekt, mit dem Nutzer ein Wertpapier ueber WKN oder ISIN suchen und den zuletzt verfuegbaren Kurs sowie historische Kursdaten als Chart ansehen koennen. Die Anwendung wird zuerst im Browser nutzbar gemacht. Eine spaetere Android-App soll dieselbe Backend-API verwenden.
+Der Aktienkurs-Explorer ist ein Rust-Lernprojekt. Nutzer geben im Browser eine ISIN ein und sehen fuer den letzten abgeschlossenen Kalendermonat die verfuegbaren taeglichen Schlusskurse als Chart. Das Backend stellt die Kursdaten ueber eine eigene JSON-API bereit; der Browser ruft Marketstack niemals direkt auf.
 
-Die Marktdaten sollen von Marketstack bezogen werden. Der API-Schluessel wird im Marketstack-Konto verwaltet und fuer die Anwendung als `MARKETSTACK_API_KEY` lokal beziehungsweise serverseitig konfiguriert. Ob und wie Marketstack WKN und ISIN direkt aufloest, welche Boersen und Intervalle im verwendeten Tarif verfuegbar sind und wie aktuell die Kurse sind, ist vor der Integration zu pruefen. Dieser PRD behauptet keine nicht verifizierten Anbieterfunktionen.
+Marketstack ist der vorgesehene Marktdatenanbieter. Sein API-Schluessel wird lokal beziehungsweise serverseitig als `MARKETSTACK_API_KEY` bereitgestellt. Da Marketstack die getesteten ISINs nicht direkt in Boersensymbole aufloest, verwendet der MVP eine explizite, gepflegte ISIN-zu-Symbol-Zuordnung. Nicht zugeordnete Kennungen werden klar abgelehnt; Symbole oder Boersenplaetze duerfen nicht erraten werden.
 
-Neben einem funktionierenden Prototyp ist das Lernziel zentral: Rust-Konzepte, Tests, API-Design und schrittweise Architektur sollen anhand des Produkts nachvollziehbar eingeuebt werden.
+Das Lernziel bleibt zentral: Rust-Konzepte, Tests, API-Design und eine schrittweise Client-Server-Architektur sollen anhand des Produkts nachvollziehbar eingeuebt werden.
 
-## 2. Ziele
+## 2. Ziele und Nicht-Ziele
 
-- Ein Wertpapier ueber WKN oder ISIN suchen koennen.
-- Den zuletzt verfuegbaren Kurs mit Waehrung und Zeitangabe anzeigen.
-- Historische Kursdaten in einem Chart fuer kurze und lange Zeitraeume betrachten.
-- Zuerst eine responsive Browser-Oberflaeche bereitstellen.
-- Eine spaetere Android-Oberflaeche ermoeglichen, ohne eine zweite Marktdaten-Integration zu bauen.
+- Eine ISIN in einer responsiven Browser-Oberflaeche eingeben und absenden koennen.
+- Fuer den letzten abgeschlossenen Kalendermonat die von Marketstack gelieferten taeglichen Schlusskurse als einfachen Chart anzeigen.
+- Instrumentname, ISIN, zugeordnetes Symbol, Boersenplatz, Zeitraum, Schlusskurs und Datenanzahl transparent darstellen, soweit bekannt.
+- Marketstack-Aufrufe und API-Schluessel ausschliesslich im Rust-Backend halten.
 - Die Implementierung in kleine, erklaerbare und automatisiert testbare Rust-Lernschritte aufteilen.
-- Marketstack fuer Marktdaten verwenden; API-Schluessel und externe Anbieter-Aufrufe bleiben serverseitig.
+- Eine spaetere Android-Oberflaeche als weiteren Client derselben Backend-API ermoeglichen.
 
-## 3. Nicht-Ziele
+Nicht-Ziele des MVP:
 
+- Intraday-Daten, frei waehlbare Zeitraeume oder Echtzeit-Kurse.
 - Kauf, Verkauf, Portfolioverwaltung, Broker-Anbindung oder Anlageberatung.
-- Produktionsbetrieb mit Verfuegbarkeitsgarantie oder verbindlicher Kurslatenz.
-- Nutzerkonten, Personalisierung oder dauerhafte Speicherung von Suchverlaeufen.
-- Ein in die App integrierter KI-Agent.
-- Eine vollstaendige native Android-App im ersten Lieferumfang.
-- Eine Annahme, dass jeder beliebige WKN-/ISIN-Wert von Marketstack direkt akzeptiert wird.
+- Eine Annahme, dass jede syntaktisch gueltige ISIN einem von Marketstack abfragbaren Symbol entspricht.
+- Eine vollstaendige native Android-App oder ein produktiver Betrieb mit Verfuegbarkeitsgarantie.
 
-## 4. Zielgruppen und Nutzungsszenarien
+## 3. Zielgruppen und Nutzungsszenarien
 
 **Primaere Zielgruppe:** Der Projektentwickler als Rust-Anfaenger, der durch ein konkretes Beispiel Programmiergrundlagen, Tests und eine einfache Client-Server-Architektur lernen moechte.
 
-**Primaeres Nutzungsszenario:** Ein Nutzer gibt eine WKN oder ISIN ein, waehlt ein gefundenes Wertpapier aus und sieht den letzten verfuegbaren Kurs. Anschliessend wechselt er zwischen Chart-Zeitraeumen von Tagen, Wochen, Monaten und Jahren.
+**Primaeres Nutzungsszenario:** Ein Nutzer gibt eine ISIN ein und sieht den Verlauf der taeglichen Schlusskurse des letzten abgeschlossenen Kalendermonats. Ist die ISIN ungueltig, nicht zugeordnet oder gibt es keine Kursdaten, erhaelt er eine verstaendliche Rueckmeldung.
 
-## 5. Funktionale Anforderungen
+## 4. Funktionale Anforderungen
 
-### Suche und Instrument
+### ISIN und Instrument
 
-- Die Suche akzeptiert WKN oder ISIN und behandelt fuehrende/nachfolgende Leerzeichen sowie Gross-/Kleinschreibung robust.
-- Die Anwendung zeigt das aufgeloeste Instrument mit Name und Symbol an, sofern diese Angaben verfuegbar sind.
-- Wenn ein Identifier nicht direkt von Marketstack verarbeitet werden kann, muss die Anwendung dies erkennen. Eine Symbolzuordnung darf nur verwendet werden, wenn sie eindeutig ist; andernfalls wird der Nutzer um eine Auswahl oder eine andere Eingabe gebeten.
-- Ungueltige Eingaben, keine Treffer und mehrdeutige Treffer erhalten verstaendliche Rueckmeldungen.
+- Das Eingabefeld akzeptiert eine ISIN, entfernt aeussere Leerzeichen und normalisiert Buchstaben auf Grossschreibung.
+- Die ISIN wird nach Format und Pruefziffer validiert.
+- Eine Marketstack-Symbolzuordnung wird nur verwendet, wenn sie fuer die ISIN und den Boersenplatz explizit geprueft wurde.
+- Unbekannte ISINs und mehrdeutige oder fehlende Zuordnungen werden nicht geraten; sie erhalten eine verstaendliche Rueckmeldung.
+- Name, ISIN, Marketstack-Symbol und Boersenplatz werden am Ergebnis angezeigt.
 
-### Kursanzeige
+### Schlusskurse und Chart
 
-- Die Detailansicht zeigt den letzten vom Anbieter gelieferten Kurs, die Waehrung und den Zeitstempel der Kursdaten, sofern verfuegbar.
-- Die Anwendung kennzeichnet Daten als Echtzeit, verzoegert oder Schlusskurs, wenn Marketstack diese Information bereitstellt oder sie fuer den gewaehlten Datenzugang verlaesslich bekannt ist.
-- Nicht verfuegbare Aktualitaetsangaben werden nicht als Echtzeit ausgegeben.
-
-### Charts
-
-- Fuer ein ausgewaehltes Instrument kann eine historische Kursreihe geladen und als Chart dargestellt werden.
-- Der Nutzer kann zwischen Zeitraeumen fuer Tage, Wochen, Monate und Jahre wechseln.
-- Die angeforderte Aufloesung und Datenmenge richten sich nach dem Zeitraum und den von Marketstack verfuegbaren Intervallen.
-- Falls Intraday-Daten fuer einen Zeitraum oder Tarif nicht verfuegbar sind, zeigt die Anwendung die bestmoegliche verfuegbare Aufloesung oder erklaert, dass keine Daten geladen werden konnten.
+- Das Backend fragt taegliche EOD-Daten fuer den letzten abgeschlossenen Kalendermonat ab.
+- Der Chart verwendet ausschliesslich den vom Anbieter gelieferten Schlusskurs pro Handelstag; nicht vorhandene Handelstage werden nicht kuenstlich ergaenzt.
+- Die Oberflaeche zeigt Zeitraum, Kurszeitpunkt, Schlusskurs, Datenanzahl, Boersenplatz und Waehrung, sofern verlaesslich bekannt.
+- Der Datenstatus wird als taeglicher Schlusskurs gekennzeichnet. Die Anwendung behauptet keine Echtzeit- oder Intraday-Verfuegbarkeit.
 - Laden, leere Daten, Fehler und erfolgreiche Darstellung sind erkennbare UI-Zustaende.
 
 ### Browser und Android
@@ -65,19 +59,19 @@ Neben einem funktionierenden Prototyp ist das Lernziel zentral: Rust-Konzepte, T
 - Das Backend stellt einen plattformneutralen JSON-Vertrag bereit.
 - Eine spaetere Android-App kann dieselben Such-, Kurs- und Zeitreihen-Endpunkte verwenden.
 
-## 6. Architektur und technische Leitlinien
+## 5. Architektur und technische Leitlinien
 
-- Rust-Backend als einzige Komponente, die Marketstack aufruft und den API-Schluessel besitzt.
+- Das Rust-Backend ist die einzige Komponente, die Marketstack aufruft und den API-Schluessel besitzt.
 - Browser-Frontend kommuniziert ausschliesslich mit der eigenen JSON-HTTP-API.
 - Spaetere Android-App kommuniziert mit derselben API.
 - Marketstack-Antworten werden in interne, anbieterunabhaengige Datentypen ueberfuehrt, bevor sie an Clients ausgegeben werden.
-- Anbieterzugriff, fachliche Typen und HTTP-Endpunkte bleiben logisch getrennt. Fuer den Lernprototyp genuegt ein einzelnes Rust-Paket mit Modulen.
+- ISIN-/Symbolzuordnung, Anwendungslogik, Marketstack-Adapter und HTTP-Endpunkte bleiben logisch getrennt. Fuer den Lernprototyp genuegt ein einzelnes Rust-Paket mit Modulen.
 - API-Schluessel werden ueber eine Umgebungsvariable oder lokale, nicht eingecheckte Konfiguration bereitgestellt. Sie duerfen weder im Browser ausgeliefert noch in Git eingecheckt werden.
 - Automatisierte Tests verwenden Fake-/Mock-Antworten und benoetigen weder einen Live-API-Key noch eine Netzwerkverbindung.
-- Zuerst wird die JSON-API mit Fake-Daten entwickelt; anschliessend wird der Marketstack-Adapter ergaenzt.
-- Ein konkretes Frontend-Framework und eine Chart-Bibliothek sind noch nicht festgelegt.
+- Der aktuelle Browser-Client ist statisches HTML, CSS und JavaScript; er kommuniziert mit `GET /api/history?isin=...`.
+- Die lokale Konfiguration wird aus `.env` geladen; `.env` ist von Git ausgeschlossen.
 
-## 7. Nicht-funktionale Anforderungen
+## 6. Nicht-funktionale Anforderungen
 
 - **Bedienbarkeit:** Minimalistische, moderne Oberflaeche mit klarer Hierarchie und ohne unnoetige Dashboard-Elemente.
 - **Robustheit:** API-Fehler, Zeitueberschreitungen, Rate Limits und unvollstaendige Antworten duerfen den Server nicht zum Absturz bringen.
@@ -87,34 +81,29 @@ Neben einem funktionierenden Prototyp ist das Lernziel zentral: Rust-Konzepte, T
 - **Lernbarkeit:** Jede Ausbaustufe hat ein kleines Ergebnis, erklaerbare Rust-Konzepte und einen reproduzierbaren Test oder Check.
 - **Datenhinweis:** Kurszeitpunkt, Waehrung und bekannte Verzoegerung werden transparent angezeigt. Die App weist darauf hin, dass Daten zu Lernzwecken dienen und nicht als Grundlage fuer Anlageentscheidungen gedacht sind.
 
-## 8. Akzeptanzkriterien fuer das MVP
+## 7. Akzeptanzkriterien fuer den MVP
 
-1. Ein Nutzer kann im Browser eine WKN oder ISIN eingeben und erhaelt entweder ein eindeutig aufgeloestes Instrument oder eine verstaendliche Fehlermeldung.
-2. Zu einem aufgeloesten Instrument werden Kurs, Waehrung und Datenzeitpunkt angezeigt, sofern der Anbieter sie liefert.
-3. Ein Nutzer kann die Zeitraeume Tage, Wochen, Monate und Jahre auswaehlen und erhaelt die jeweils verfuegbare historische Kursreihe.
-4. Die Oberflaeche hat sichtbare Lade-, Erfolgs-, Leer- und Fehlerzustaende und funktioniert auf Desktop- sowie mobilen Browserfenstern.
-5. Browser-Code enthaelt keinen Marketstack-API-Schluessel und ruft Marketstack nicht direkt auf.
-6. Backend-Tests decken mindestens erfolgreiche Antworten sowie ungueltige Eingaben, unbekannte Instrumente und Anbieterfehler ab und laufen ohne Netzwerkzugriff.
-7. Die API-Antworten sind nicht an Marketstack-Feldnamen gebunden und koennen von einem spaeteren Android-Client verwendet werden.
-8. Die Anwendung kennzeichnet Kursaktualitaet nicht staerker, als es die vorhandenen Anbieterinformationen rechtfertigen.
+1. Ein Nutzer kann eine gueltige, unterstuetzte ISIN eingeben und die Monatsdaten abrufen.
+2. Die Anwendung zeigt taegliche Schlusskurse des letzten abgeschlossenen Kalendermonats in einem Chart.
+3. Zeitraum, Instrument, Symbol, Boersenplatz, Schlusskurs und bekannte Waehrung werden angezeigt.
+4. Ungueltige, nicht zugeordnete ISINs, leere Ergebnisse und Anbieterfehler erzeugen klare UI- und API-Fehlerzustande.
+5. Die responsive Oberflaeche funktioniert auf Desktop- und mobilen Browserfenstern.
+6. Browser-Code enthaelt keinen Marketstack-API-Schluessel und ruft Marketstack nicht direkt auf.
+7. Fachlogik und API-Tests laufen mit Fake-/Mock-Daten ohne Netzwerk und ohne API-Schluessel.
+8. Anbieterfelder werden vor der Ausgabe auf eigene, stabile JSON-Datentypen abgebildet.
 
-## 9. Vorgesehene Lieferetappen
+## 8. Vorgesehene naechste Schritte
 
-1. **Fachliche Grundlagen:** WKN-/ISIN-Eingabe, interne Typen, Validierung und Unit-Tests.
-2. **JSON-API mit Fake-Daten:** Endpunkte und Fehlerverhalten ohne externe Abhaengigkeit.
-3. **Marketstack-Integration:** Identifier-Aufloesung, Quote und Zeitreihe anhand offizieller Dokumentation und manueller Tests pruefen.
-4. **Browser-MVP:** Suche, Kursanzeige, Zeitraum-Auswahl, Chart und UI-Zustaende.
-5. **Stabilisierung:** Mock-basierte Tests, API-Key-Konfiguration, Rate-Limit- und Fehlerbehandlung sowie Nutzungs-/Datenhinweise.
-6. **Android-Vorbereitung:** API-Vertrag dokumentieren; native Android-Implementierung bleibt ein spaeterer Schritt.
+1. **Symbolzuordnung ausbauen:** weitere ISINs nur mit verifizierter Boerse und Marketstack-Symbolzuordnung aufnehmen.
+2. **Anbieter- und API-Tests:** Adapter-Mapping, Fehlercodes und HTTP-Antworten mit Mock-Antworten abdecken.
+3. **Datenhinweise vervollstaendigen:** bekannte Waehrung und Zeitstempel je Boersenlisting verlaesslich liefern.
+4. **Android-Vorbereitung:** den JSON-Vertrag dokumentieren; eine native App bleibt ausserhalb des MVP.
 
-## 10. Offene Punkte und Risiken
+## 9. Bekannte Grenzen und offene Punkte
 
-- Unterstuetzt Marketstack die direkte Abfrage deutscher WKNs und ISINs? Falls nicht, welche belastbare Zuordnung auf ein Marketstack-Symbol wird verwendet?
-- Welche deutschen Boersen und Instrumente sind im verfuegbaren Zugang abgedeckt?
-- Welche Aktualitaet, Intraday-Intervalle, Historientiefe und Limits gelten fuer den gewaehlten API-Zugang?
-- Welche Nutzungs-, Anzeige- und Attributionsbedingungen gelten fuer einen lokalen Lernprototyp?
-- Wie werden mehrere Treffer, unterschiedliche Boersenplaetze und Waehrungen dargestellt?
-- Welches Frontend-Framework und welche Chart-Bibliothek werden fuer den Browser gewaehlt?
-- Soll Android spaeter nativ (zum Beispiel Kotlin) oder als installierbare Web-App umgesetzt werden? Der MVP legt dies nicht fest.
-
-Diese Punkte muessen vor der echten Marketstack-Integration anhand der offiziellen Dokumentation und kleiner manueller Requests geprueft werden. Die Auswahl von Marketstack ist eine Produktentscheidung des Nutzers, keine bestaetigte Aussage ueber kostenlose Nutzung, Identifier-Abdeckung oder Kursaktualitaet.
+- Der aktuelle Code kennt Zuordnungen fuer `IE00B0M62Q58` (`IQQW.XETRA`) und `IE00BKM4GZ66` (`EIMI.XSWX`). Diese Liste ist kein allgemeiner ISIN-Aufloesungsdienst.
+- Ein Fonds kann mehrere Boersenlistings haben. Die Zuordnung muss zum gewuenschten Markt passen und darf nicht allein aufgrund eines gleichen Namens geraten werden.
+- Verfuegbarkeit und Aktualitaet der EOD-Daten unterscheiden sich nach Symbol und Boerse. Vor Aufnahme eines weiteren Instruments sind Symbol, Boerse, Datenzeitraum und Tarifzugriff zu pruefen.
+- Der aktuelle Marketstack-Tarif erlaubt fuer die bislang getesteten Symbole keinen Intraday-Zugriff; Intraday liegt ausserhalb des MVP.
+- Waehrungsangaben muessen pro Listing verifiziert sein. Fehlende Angaben bleiben unbekannt und werden nicht geraten.
+- Nutzungs-, Anzeige- und Attributionsbedingungen muessen vor einer Veroeffentlichung anhand offizieller Marketstack-Quellen geprueft werden.
