@@ -9,7 +9,8 @@
 1. Lies den Agenten-Einstieg, das PAD, den Status und die aktive Task; lies PRD- und Codeabschnitte nur soweit fuer diese Task relevant.
 2. Identifiziere den konkreten Code-/Dokumentationsanker, das erwartete Verhalten und eine lokale Hypothese.
 3. Lege vor der Aenderung einen moeglichst guenstigen Check fest, der die Hypothese widerlegen kann.
-4. Frage den Nutzer nur bei einer wesentlichen, nicht aus Repository und Anforderungen ableitbaren Entscheidung. Halte andere Unsicherheiten sichtbar, ohne den Kontext mit Wiederholungen zu fuellen.
+4. Wenn eine neue Funktion oder ein neues Verhalten implementiert wird, schreibe vorher den passenden lokalen Test und verifiziere, dass er den Fehler oder das erwartete Verhalten reproduziert.
+5. Frage den Nutzer nur bei einer wesentlichen, nicht aus Repository und Anforderungen ableitbaren Entscheidung. Halte andere Unsicherheiten sichtbar, ohne den Kontext mit Wiederholungen zu fuellen.
 
 ## Implement
 
@@ -21,10 +22,11 @@
 ## Verify
 
 1. Fuehre direkt nach der ersten Codeaenderung den geplanten fokussierten Check aus.
-2. Wenn er einen lokalen Fehler bestaetigt, korrigiere denselben Bereich und wiederhole denselben Check.
-3. Fuehre danach nur weitere Checks aus, die fuer das Risiko der Aenderung oder die Abnahmekriterien noetig sind.
-4. Pruefe Dokumentationslinks, Akzeptanzkriterien und den tatsaechlichen Codebezug, wenn die Task Dokumentation betrifft.
-5. Aktualisiere STATUS mit ausgefuehrten Checks, Ergebnissen und verbleibenden Grenzen. Behaupte keine nicht ausgefuehrten Pruefungen.
+2. Wenn der Check fehlschlaegt, lese die lokale Ausgabe genau; sie muss die betroffene Stelle, die Ursache und den naechsten Korrekturpunkt benennen, damit keine Kontextverschmutzung durch Raten entsteht.
+3. Korrigiere denselben Bereich und wiederhole denselben Test, bis er lokal gruen ist.
+4. Fuehre danach nur weitere Checks aus, die fuer das Risiko der Aenderung oder die Abnahmekriterien noetig sind.
+5. Pruefe Dokumentationslinks, Akzeptanzkriterien und den tatsaechlichen Codebezug, wenn die Task Dokumentation betrifft.
+6. Aktualisiere STATUS mit ausgefuehrten Checks, Ergebnissen und verbleibenden Grenzen. Behaupte keine nicht ausgefuehrten Pruefungen.
 
 ## Abschluss
 

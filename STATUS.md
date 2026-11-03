@@ -13,6 +13,7 @@
 - Eine unbekannte, aber syntaktisch gueltige ISIN wird mit einer klaren Meldung abgelehnt.
 - Marketstack wird ueber einen Backend-Adapter angesprochen; `.env` bleibt lokal und ist von Git ausgeschlossen.
 - Die Architektur-Dokumentation ist in `docs/ARCHITECTURE.md` ergänzt und mit dem tatsächlichen Code-, API- und Teststand abgeglichen.
+- Die Projektgrundlagen in [PAD](PAD.md) und [PIV.md](PIV.md) wurden erweitert: neue Features muessen mit einem passenden lokalen Test beginnen und die Regression lokal gruen laufen, bevor sie als fertig gelten.
 
 ## Gepruefte ISIN-Zuordnungen
 

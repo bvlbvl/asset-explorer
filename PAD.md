@@ -39,6 +39,15 @@ Die ausfuehrliche Mermaid-Architektur und der Code-Rundgang werden gemaess der a
 - `cargo test`: Offline-Tests ohne API-Schluessel oder Netzwerk ausfuehren.
 - `cargo run`: lokalen Browser-Prototyp mit Rust-Backend starten.
 
+## Test- und Verifikationspflicht fuer Aenderungen
+
+- Jede neue Funktion oder jeder neue Feature-Block beginnt mit einem passenden lokalen Test, der das erwartete Verhalten oder den zu fixenden Fehler reproduziert.
+- Ein Test gilt als Konvention, nicht als optionales Extra: Wenn ein Feature implementiert wird, muss der relevante Testlauf lokal und reproduzierbar durchgefuehrt werden.
+- Der Agent darf einen Aenderungsblock nicht als fertig bezeichnen, solange der passende Test noch fehlt oder fehlschlaegt.
+- Fehlersichtbarkeit ist Teil der Verifikation: Ein lokaler Testlauf muss die betroffene Stelle, die Ursache und den naechsten Korrekturpunkt klar benennen, damit der Agent nicht mit Kontext-Rauschen und Raten arbeiten muss.
+- Regressionspruefungen sollten lokal und fokussiert laufen; bei einem Fehler wird derselbe Test nach der Korrektur erneut ausgefuehrt, bevor ein weiterer Scope betrachtet wird.
+- Der Projektworkflow setzt auf lokale Verifikation statt auf manuelle KI-Interpretation externer Ergebnisse.
+
 ## Arbeitskontext
 
 - [PRD.md](PRD.md) definiert Ziele, Umfang und Abnahmekriterien.
