@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f3f5f1" />
+    <title>Schlusskurs | Aktienkurs-Explorer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="wordmark" href="/" aria-label="Schlusskurs Startseite">
+        <span class="wordmark-mark" aria-hidden="true">S</span>
+        <span>SCHLUSSKURS</span>
+      </a>
+      <div class="topbar-meta"><span class="live-dot"></span> MARKTDATEN / EOD</div>
+    </header>
+
+    <main class="page-shell">
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow">AKTIENKURS-EXPLORER <span>01 / 03</span></p>
+        <h1 id="page-title">Werte im<br /><span>Monatsverlauf.</span></h1>
+        <p class="intro-copy">Tägliche Schlusskurse, auf einen Blick.</p>
+      </section>
+
+      <section class="lookup" aria-label="ISIN suchen">
+        <form id="search-form" novalidate>
+          <label for="isin-input">ISIN</label>
+          <div class="search-row">
+            <input id="isin-input" name="isin" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" maxlength="12" value="IE00B0M62Q58" placeholder="z. B. IE00B0M62Q58" aria-describedby="isin-hint" required />
+            <button id="submit-button" type="submit"><span>Verlauf anzeigen</span><span class="button-arrow" aria-hidden="true">↗</span></button>
+          </div>
+          <p id="isin-hint" class="field-hint">12-stellige internationale Wertpapierkennung</p>
+        </form>
+      </section>
+
+      <section id="result-section" class="result-section" aria-live="polite">
+        <div class="result-heading">
+          <div>
+            <p class="eyebrow">LETZTER KALENDERMONAT</p>
+            <h2 id="instrument-name">Noch kein Wertpapier geladen</h2>
+            <p id="instrument-meta" class="instrument-meta">ISIN eingeben und Verlauf abrufen</p>
+          </div>
+          <div class="range-label" id="range-label">30 TAGE <span>·</span> TAGESWERTE</div>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat-block">
+            <span class="stat-label">LETZTER SCHLUSSKURS</span>
+            <strong id="latest-close" class="stat-value">--</strong>
+          </div>
+          <div class="stat-block stat-right">
+            <span class="stat-label">DATENPUNKTE</span>
+            <strong id="point-count" class="stat-value stat-count">--</strong>
+          </div>
+        </div>
+
+        <div id="chart-wrap" class="chart-wrap" hidden>
+          <canvas id="history-chart" role="img" aria-label="Chart der täglichen Schlusskurse"></canvas>
+        </div>
+        <div id="empty-state" class="empty-state">
+          <div class="empty-mark" aria-hidden="true">↗</div>
+          <p>Der Verlauf erscheint hier.</p>
+        </div>
+        <p id="status-message" class="status-message" role="status">Bereit zur Abfrage.</p>
+      </section>
+
+      <footer class="page-footer">
+        <span>DATEN VON MARKETSTACK</span>
+        <span>KURSE ZU LERNZWECKEN · KEINE ANLAGEBERATUNG</span>
+      </footer>
+    </main>
+  </body>
+</html>

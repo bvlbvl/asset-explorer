@@ -1,96 +1,36 @@
-use chrono::{Datelike, Duration as ChronoDuration, Utc};
-use reqwest::blocking::Client;
+mod api;
+mod domain;
+mod marketstack;
+mod service;
+
+use crate::marketstack::MarketstackProvider;
+use crate::service::HistoryService;
 use std::env;
-use std::time::Duration;
+use std::error::Error;
+use std::sync::Arc;
 
-const API_BASE_URL: &str = "https://api.marketstack.com/v1";
-const ISIN: &str = "IE00B0M62Q58";
-const MARKETSTACK_SYMBOL: &str = "IQQW.XETRA";
+const LISTEN_ADDRESS: &str = "127.0.0.1:3000";
 
-fn main() {
-    if let Err(message) = run() {
-        eprintln!("Fehler: {message}");
+#[tokio::main]
+async fn main() {
+    if let Err(error) = run().await {
+        eprintln!("Server konnte nicht gestartet werden: {error}");
         std::process::exit(1);
     }
 }
 
-fn run() -> Result<(), String> {
-    let _ = dotenvy::dotenv();
-    let api_key = env::var("MARKETSTACK_API_KEY")
-        .map_err(|_| "MARKETSTACK_API_KEY fehlt in .env oder der Umgebung.".to_owned())?;
+async fn run() -> Result<(), Box<dyn Error>> {
+    dotenvy::dotenv().ok();
+    let api_key = env::var("MARKETSTACK_API_KEY")?;
     if api_key.trim().is_empty() {
-        return Err("MARKETSTACK_API_KEY ist leer.".to_owned());
+        return Err("MARKETSTACK_API_KEY ist leer.".into());
     }
 
-    let client = Client::builder()
-        .timeout(Duration::from_secs(20))
-        .build()
-        .map_err(|_| "Der HTTP-Client konnte nicht erstellt werden.".to_owned())?;
+    let provider = Arc::new(MarketstackProvider::new(api_key)?);
+    let history_service = HistoryService::new(provider);
+    let listener = tokio::net::TcpListener::bind(LISTEN_ADDRESS).await?;
 
-    println!("Marketstack-Symbol fuer {ISIN}: {MARKETSTACK_SYMBOL} (Xetra-Listing)");
-
-    println!("Intraday-Abfrage (1-Minuten-Intervall, maximal 10 Datensaetze)");
-    print_response(
-        &client,
-        "intraday",
-        &api_key,
-        &[
-            ("symbols", MARKETSTACK_SYMBOL),
-            ("interval", "1min"),
-            ("limit", "10"),
-        ],
-    );
-
-    let first_day_this_month = Utc::now()
-        .date_naive()
-        .with_day(1)
-        .expect("Der erste Monatstag ist gueltig.");
-    let last_day_previous_month = first_day_this_month - ChronoDuration::days(1);
-    let first_day_previous_month = last_day_previous_month
-        .with_day(1)
-        .expect("Der erste Tag des Vormonats ist gueltig.");
-    let date_from = first_day_previous_month.to_string();
-    let date_to = last_day_previous_month.to_string();
-
-    println!("\nTageskurse fuer {MARKETSTACK_SYMBOL} vom {date_from} bis {date_to}");
-    print_response(
-        &client,
-        "eod",
-        &api_key,
-        &[
-            ("symbols", MARKETSTACK_SYMBOL),
-            ("date_from", &date_from),
-            ("date_to", &date_to),
-        ],
-    );
-
+    println!("Aktienkurs-Explorer: http://{LISTEN_ADDRESS}");
+    axum::serve(listener, api::router(history_service)).await?;
     Ok(())
-}
-
-fn print_response(
-    client: &Client,
-    endpoint: &str,
-    api_key: &str,
-    parameters: &[(&str, &str)],
-) {
-    let mut request = client
-        .get(format!("{API_BASE_URL}/{endpoint}"))
-        .query(&[("access_key", api_key)]);
-    for (name, value) in parameters {
-        request = request.query(&[(*name, *value)]);
-    }
-
-    match request.send() {
-        Ok(response) => {
-            let status = response.status();
-            match response.text() {
-                Ok(body) => {
-                    println!("HTTP {status}");
-                    println!("{}", body.replace(api_key, "[REDACTED]"));
-                }
-                Err(_) => eprintln!("Antwort konnte nicht gelesen werden."),
-            }
-        }
-        Err(_) => eprintln!("Anfrage fehlgeschlagen (Netzwerkfehler oder Timeout)."),
-    }
 }
